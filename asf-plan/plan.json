@@ -1,0 +1,406 @@
+{
+ "status": "plan",
+ "summary": "RelayDesk: ADR, bootstrap, CI, auth, audit, orgs/RBAC, invitations, tickets, assignment, workflow, comments, reporting, hardening, e2e, CD.",
+ "tasks": [
+  {
+   "key": "T1",
+   "title": "ADR: RelayDesk architecture, tenancy and CI/CD",
+   "category": "backend",
+   "description": "Write ADRs (one file each) covering: modular monolith layout and module boundaries; tenant isolation strategy (request-context org, scoped repositories, optional RLS); token strategy (JWT access + rotating hashed refresh tokens, Argon2); CI/CD and rollback approach.",
+   "acceptance_criteria": [
+    "ADR files contain context, options, decision, consequences",
+    "Tenant isolation and token decisions are explicit"
+   ],
+   "depends_on": [],
+   "touches": [
+    "docs/adr/"
+   ],
+   "size": "small"
+  },
+  {
+   "key": "T2",
+   "title": "Bootstrap FastAPI app, DB, Alembic, Docker",
+   "category": "backend",
+   "description": "Create app package (main, core: config/database/security/exceptions/logging/dependencies; shared; modules skeleton), pyproject with pinned lock, Alembic setup, SQLAlchemy 2 base with UUID/timestamptz conventions, structured logging, error format, /api/v1/health/live and /ready (checks PostgreSQL), Dockerfile, docker-compose with postgres 16, .env.example, test fixtures with isolated PostgreSQL database. Keep existing app.py tests passing or migrate them.",
+   "acceptance_criteria": [
+    "GET /api/v1/health/live returns 200; /ready checks DB",
+    "Alembic upgrade head works on empty DB",
+    "Docker image builds; compose starts app+postgres",
+    "pytest -q passes",
+    "Errors use {error:{code,message,details}} format"
+   ],
+   "depends_on": [
+    {
+     "key": "T1",
+     "kind": "implementation"
+    }
+   ],
+   "touches": [
+    "app/",
+    "migrations/",
+    "tests/",
+    "pyproject.toml",
+    "Dockerfile",
+    "docker-compose.yml",
+    "alembic.ini",
+    ".env.example",
+    "app.py",
+    "test_app.py",
+    "README.md"
+   ],
+   "size": "medium"
+  },
+  {
+   "key": "T3",
+   "title": "CI pipeline on pull requests",
+   "category": "devops",
+   "description": "GitHub Actions workflow: install deps, Ruff lint+format check, MyPy, pytest with Postgres service and coverage, Bandit, pip-audit, Docker build, Alembic migration validation, OpenAPI export validation. Update CODEOWNERS if needed.",
+   "acceptance_criteria": [
+    "Workflow runs all listed checks",
+    "Jobs fail on any violation",
+    "Postgres service used for integration tests"
+   ],
+   "depends_on": [
+    {
+     "key": "T1",
+     "kind": "implementation"
+    },
+    {
+     "key": "T2",
+     "kind": "implementation"
+    }
+   ],
+   "touches": [
+    ".github/"
+   ],
+   "size": "medium"
+  },
+  {
+   "key": "T4",
+   "title": "Authentication module",
+   "category": "backend",
+   "description": "Users model/migration, POST /auth/register, /login, /refresh (rotation, reuse detection), /logout (revocation), /password-reset and /confirm, GET /users/me, activate/deactivate. Argon2 hashing, short-lived JWT with strict alg/exp validation, refresh tokens stored hashed.",
+   "acceptance_criteria": [
+    "Valid login returns tokens; invalid credentials return proper error code",
+    "Expired access token rejected",
+    "Revoked/reused refresh token rejected",
+    "Inactive user cannot authenticate",
+    "No plaintext passwords stored",
+    "Unit and integration tests"
+   ],
+   "depends_on": [
+    {
+     "key": "T2",
+     "kind": "implementation"
+    }
+   ],
+   "touches": [
+    "app/modules/authentication/",
+    "app/modules/users/",
+    "app/core/security.py",
+    "migrations/",
+    "tests/"
+   ],
+   "size": "medium"
+  },
+  {
+   "key": "T5",
+   "title": "Audit logging module",
+   "category": "backend",
+   "description": "AuditLog model/migration (JSONB metadata, no cascade delete), audit service interface used by other modules, read-only audit listing for authorized roles (no edit/delete APIs), integrate with auth events where applicable.",
+   "acceptance_criteria": [
+    "Audit service records event id, org, actor, action, entity type/id, metadata, timestamp",
+    "No API can modify or delete audit events",
+    "Index audit_logs(org, created_at) exists",
+    "Tests included"
+   ],
+   "depends_on": [
+    {
+     "key": "T2",
+     "kind": "implementation"
+    }
+   ],
+   "touches": [
+    "app/modules/audit/",
+    "migrations/",
+    "tests/"
+   ],
+   "size": "medium"
+  },
+  {
+   "key": "T6",
+   "title": "Organizations, memberships and RBAC",
+   "category": "backend",
+   "description": "Organization and Membership models, organization registration with initial admin, GET/PATCH /organizations/current, members list/update/delete, tenant request context (active membership check), central permission matrix per spec section 3 with deny by default. Emit audit events.",
+   "acceptance_criteria": [
+    "Unique slug; resources scoped to org",
+    "Cross-organization access denied",
+    "Only admins manage org and members",
+    "Permission matrix unit-tested at 100%",
+    "Audit events recorded"
+   ],
+   "depends_on": [
+    {
+     "key": "T4",
+     "kind": "implementation"
+    },
+    {
+     "key": "T5",
+     "kind": "implementation"
+    }
+   ],
+   "touches": [
+    "app/modules/organizations/",
+    "app/modules/memberships/",
+    "app/shared/permissions.py",
+    "app/core/dependencies.py",
+    "migrations/",
+    "tests/"
+   ],
+   "size": "medium"
+  },
+  {
+   "key": "T7",
+   "title": "Invitations",
+   "category": "backend",
+   "description": "Invitation model, POST/GET /organizations/invitations, POST /invitations/accept, POST /organizations/invitations/{id}/revoke. Secure random token stored only as hash, expiry, single use, role assignment, audit events. Admin and manager can invite.",
+   "acceptance_criteria": [
+    "Tokens stored hashed only",
+    "Expired, revoked or accepted invitations cannot be accepted",
+    "Invitation belongs to one org",
+    "Agents/requesters cannot invite",
+    "Tests included"
+   ],
+   "depends_on": [
+    {
+     "key": "T6",
+     "kind": "implementation"
+    }
+   ],
+   "touches": [
+    "app/modules/invitations/",
+    "migrations/",
+    "tests/"
+   ],
+   "size": "medium"
+  },
+  {
+   "key": "T8",
+   "title": "Categories and tickets CRUD",
+   "category": "backend",
+   "description": "Category endpoints (POST, GET, PATCH, DELETE=deactivate) and ticket models, create/get/update/list/archive with filters (status, priority, category, assignee), search, sorting, pagination format per spec, indexes, visibility by role (all/assigned/own). Audit events.",
+   "acceptance_criteria": [
+    "Ticket requires valid category and priority",
+    "Other orgs tickets not retrievable",
+    "Role-based visibility enforced",
+    "Pagination format matches spec",
+    "Indexes from spec present",
+    "Tests included"
+   ],
+   "depends_on": [
+    {
+     "key": "T6",
+     "kind": "implementation"
+    }
+   ],
+   "touches": [
+    "app/modules/tickets/",
+    "app/modules/categories/",
+    "app/shared/pagination.py",
+    "migrations/",
+    "tests/"
+   ],
+   "size": "medium"
+  },
+  {
+   "key": "T9",
+   "title": "Ticket assignment",
+   "category": "backend",
+   "description": "Assignment model with history, POST /tickets/{id}/assign and /unassign, reassign closes previous assignment, assignee must belong to org, GET /tickets/{id}/history includes assignments, audit events.",
+   "acceptance_criteria": [
+    "Only admin/manager assign",
+    "Cross-org assignee rejected",
+    "History records who and when",
+    "Every change creates audit event",
+    "Tests included"
+   ],
+   "depends_on": [
+    {
+     "key": "T8",
+     "kind": "implementation"
+    }
+   ],
+   "touches": [
+    "app/modules/assignments/",
+    "migrations/",
+    "tests/"
+   ],
+   "size": "medium"
+  },
+  {
+   "key": "T10",
+   "title": "Workflow state machine",
+   "category": "backend",
+   "description": "POST /tickets/{id}/transitions enforcing the spec transition table, explicit reopen operation for CLOSED, resolved_at/closed_at, transition records with actor/prev/new, authorization (admin/manager/agent), audit events.",
+   "acceptance_criteria": [
+    "Invalid transitions rejected",
+    "Closed ticket unmodifiable until reopened",
+    "Transitions recorded",
+    "Requesters cannot change status",
+    "Unit tests cover full transition table"
+   ],
+   "depends_on": [
+    {
+     "key": "T8",
+     "kind": "implementation"
+    }
+   ],
+   "touches": [
+    "app/modules/workflows/",
+    "migrations/",
+    "tests/"
+   ],
+   "size": "medium"
+  },
+  {
+   "key": "T11",
+   "title": "Comments and internal notes",
+   "category": "backend",
+   "description": "Comment model, POST/GET /tickets/{id}/comments chronological, is_internal notes hidden from requesters, no update/delete, audit events.",
+   "acceptance_criteria": [
+    "Internal notes never returned to requesters",
+    "Comments immutable via API",
+    "Access limited by ticket visibility and org",
+    "Tests included"
+   ],
+   "depends_on": [
+    {
+     "key": "T8",
+     "kind": "implementation"
+    }
+   ],
+   "touches": [
+    "app/modules/comments/",
+    "migrations/",
+    "tests/"
+   ],
+   "size": "medium"
+  },
+  {
+   "key": "T12",
+   "title": "Reporting",
+   "category": "backend",
+   "description": "GET /reports/overview, /reports/tickets, /reports/agents: totals, by status/priority/category/agent, resolution statistics; org-scoped; admin/manager only.",
+   "acceptance_criteria": [
+    "Numbers correct in tests",
+    "Other orgs data excluded",
+    "Agents/requesters denied",
+    "Calculation unit tests"
+   ],
+   "depends_on": [
+    {
+     "key": "T9",
+     "kind": "implementation"
+    },
+    {
+     "key": "T10",
+     "kind": "implementation"
+    }
+   ],
+   "touches": [
+    "app/modules/reporting/",
+    "tests/"
+   ],
+   "size": "medium"
+  },
+  {
+   "key": "T13",
+   "title": "Security hardening and security tests",
+   "category": "backend",
+   "description": "Rate limiting on sensitive endpoints, brute-force login protection, secure CORS, security headers, request size limits, safe error responses, no secrets in logs; security test suite (cross-org IDOR, role enforcement, JWT misuse, mass assignment, token reuse).",
+   "acceptance_criteria": [
+    "Login lockout/rate limit tested",
+    "Security headers present",
+    "Oversized requests rejected",
+    "Security tests pass for all modules"
+   ],
+   "depends_on": [
+    {
+     "key": "T7",
+     "kind": "implementation"
+    },
+    {
+     "key": "T11",
+     "kind": "implementation"
+    },
+    {
+     "key": "T12",
+     "kind": "implementation"
+    }
+   ],
+   "touches": [
+    "app/shared/middleware/",
+    "app/core/",
+    "tests/security/"
+   ],
+   "size": "medium"
+  },
+  {
+   "key": "T14",
+   "title": "E2E tests, performance profile, docs",
+   "category": "backend",
+   "description": "End-to-end test of the full spec flow (register org, login, category, invite, accept, ticket, assign, status, comment, resolve/close, audit, reports), documented load profile with P95 check script, complete OpenAPI descriptions, README, deployment and secret-rotation docs. Verify coverage >=85%.",
+   "acceptance_criteria": [
+    "E2E test passes",
+    "Coverage >=85%",
+    "Every endpoint documented in OpenAPI",
+    "Load profile documented"
+   ],
+   "depends_on": [
+    {
+     "key": "T13",
+     "kind": "implementation"
+    }
+   ],
+   "touches": [
+    "tests/e2e/",
+    "scripts/",
+    "docs/",
+    "README.md"
+   ],
+   "size": "medium"
+  },
+  {
+   "key": "T15",
+   "title": "CD pipeline and production Docker",
+   "category": "devops",
+   "description": "Deployment workflow after merge: build immutable image tagged with commit SHA, push to registry, run migrations, deploy, readiness and smoke checks, automatic rollback on failure; production Docker config, env separation.",
+   "acceptance_criteria": [
+    "Image tagged with SHA",
+    "Smoke check after deploy",
+    "Automatic rollback on failure without reversing destructive migrations",
+    "Documented"
+   ],
+   "depends_on": [
+    {
+     "key": "T1",
+     "kind": "implementation"
+    },
+    {
+     "key": "T3",
+     "kind": "implementation"
+    },
+    {
+     "key": "T14",
+     "kind": "implementation"
+    }
+   ],
+   "touches": [
+    ".github/",
+    "Dockerfile",
+    "scripts/"
+   ],
+   "size": "medium"
+  }
+ ]
+}
