@@ -1,0 +1,52 @@
+[project]
+name = "relaydesk"
+version = "0.1.0"
+description = "RelayDesk ticketing API"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi==0.128.0",
+    "uvicorn==0.40.0",
+    "pydantic==2.12.5",
+    "pydantic-settings==2.12.0",
+    "SQLAlchemy==2.0.46",
+    "alembic==1.17.2",
+    "psycopg[binary]==3.3.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.0.2",
+    "httpx==0.28.1",
+    "ruff==0.14.10",
+    "mypy==1.19.1",
+    "bandit==1.9.2",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "test_app.py"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+"test_app.py" = ["S101"]
+"app/core/exceptions.py" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+exclude = ["^\\.venv/"]
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
