@@ -42,6 +42,11 @@ class ForbiddenError(AppError):
     code = "forbidden"
 
 
+class TooManyRequestsError(AppError):
+    status_code = 429
+    code = "rate_limited"
+
+
 class ServiceUnavailableError(AppError):
     status_code = 503
     code = "service_unavailable"

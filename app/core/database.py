@@ -1,7 +1,8 @@
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from functools import lru_cache
 
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import DateTime, Dialect, Engine, TypeDecorator, create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import get_settings
@@ -9,6 +10,20 @@ from app.core.config import get_settings
 
 class Base(DeclarativeBase):
     """Declarative base for all ORM models (used by Alembic autogenerate)."""
+
+
+class UTCDateTime(TypeDecorator[datetime]):
+    """Timezone-aware datetime that always round-trips as UTC (even on SQLite)."""
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_result_value(
+        self, value: datetime | None, dialect: Dialect
+    ) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value
 
 
 def normalize_url(url: str) -> str:

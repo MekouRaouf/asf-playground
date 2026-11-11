@@ -4,6 +4,8 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import create_engine
 
+import app.modules.authentication.models  # noqa: F401
+import app.modules.users.models  # noqa: F401
 from app.core.database import Base, normalize_url
 
 config = context.config
