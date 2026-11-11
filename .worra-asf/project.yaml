@@ -1,0 +1,4 @@
+id: asf-playground
+repository: MekouRaouf/asf-playground
+default_branch: main
+test_command: pytest -q
