@@ -28,3 +28,5 @@ Errors use `{"error": {"code": "...", "message": "...", "details": ...}}`.
 
 Note: `uv.lock`/`pip-compile` lock file is not yet generated; dependencies are
 pinned with `==` in `pyproject.toml`.
+
+Worked on with Worra ASF.
